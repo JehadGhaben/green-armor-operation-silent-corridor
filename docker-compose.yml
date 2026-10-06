@@ -1,0 +1,115 @@
+name: green-armor-silent-corridor
+
+services:
+  attacker:
+    build: ./attacker
+    container_name: ga-attacker
+    hostname: GA-ATTACKER
+    tty: true
+    stdin_open: true
+    depends_on:
+      pivot:
+        condition: service_healthy
+    networks:
+      edge:
+        ipv4_address: 10.77.10.10
+
+  pivot:
+    build: ./pivot
+    container_name: ga-pivot
+    hostname: GA-PIVOT
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ss -lnt | grep -q ':22 '"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks:
+      edge:
+        ipv4_address: 10.77.10.20
+      core:
+        ipv4_address: 10.77.20.10
+
+  ldap:
+    image: bitnami/openldap:2.6
+    container_name: ga-ldap
+    hostname: GA-LDAP
+    restart: unless-stopped
+    environment:
+      LDAP_ROOT: "dc=greenarmor,dc=lab"
+      LDAP_ADMIN_USERNAME: "admin"
+      LDAP_ADMIN_PASSWORD: "Directory-Admin-27!"
+      LDAP_USERS: "directory-reader"
+      LDAP_PASSWORDS: "Directory-Only-27!"
+      LDAP_USER_OU: "people"
+      LDAP_GROUP: "operators"
+      LDAP_ALLOW_ANON_BINDING: "yes"
+      LDAP_PORT_NUMBER: "1389"
+    networks:
+      core:
+        ipv4_address: 10.77.20.20
+
+  database:
+    image: mariadb:11.4
+    container_name: ga-db
+    hostname: GA-DB
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: "Root-Range-Only-27!"
+      MARIADB_DATABASE: "greenarmor_ops"
+      MARIADB_USER: "analyst"
+      MARIADB_PASSWORD: "Analyst-Bridge-27!"
+    volumes:
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p'Root-Range-Only-27!' --silent"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+    networks:
+      core:
+        ipv4_address: 10.77.20.30
+
+  internal-web:
+    build: ./internal-web
+    container_name: ga-internal-web
+    hostname: GA-INTERNAL-WEB
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health.txt | grep -q 'OK'"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks:
+      core:
+        ipv4_address: 10.77.20.40
+
+  internal-ssh:
+    build: ./internal-ssh
+    container_name: ga-internal-ssh
+    hostname: GA-VAULT
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ss -lnt | grep -q ':22 '"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks:
+      core:
+        ipv4_address: 10.77.20.50
+
+networks:
+  edge:
+    name: ga-silent-corridor-edge
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.77.10.0/24
+
+  core:
+    name: ga-silent-corridor-core
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.77.20.0/24
